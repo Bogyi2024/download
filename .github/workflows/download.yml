@@ -1,0 +1,40 @@
+name: Download and Upload to Hugging Face
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_url:
+        description: "Enter the file URL to download"
+        required: true
+        type: string
+
+jobs:
+  download_and_upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y wget git-lfs
+
+      - name: Download file with wget
+        run: |
+          wget "${{ github.event.inputs.file_url }}" -O downloaded_file
+
+      - name: Upload to Hugging Face Hub
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          git lfs install
+          git clone https://huggingface.co/${{ secrets.HF_REPO }} hf_repo
+          cd hf_repo
+          cp ../downloaded_file .
+          git add .
+          git commit -m "Upload from GitHub Action: $(date)"
+          git push https://huggingface.co/${{ secrets.HF_REPO }} HEAD:main
