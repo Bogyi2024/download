@@ -12,7 +12,12 @@ jobs:
     name: Start Building...
     runs-on: ubuntu-latest
 
-    steps:
+    steps: # All steps must be inside this 'steps:' block
+      - name: Install dependencies
+        # Removed 'shell: pwsh' as these are standard bash commands
+        run: |
+          python -m pip install gdown --upgrade gdown requests huggingface-hub git+https://github.com/Juvenal-Yescas/mediafire-dl
+
       - name: Downloading & Running Essentials
         # This 'env' block makes the secret available as an environment variable
         # for all commands within this step.
