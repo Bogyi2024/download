@@ -1,0 +1,24 @@
+name: Ubuntu - Download App
+on:
+  workflow_dispatch:
+    inputs:
+      links_content:
+        description: 'The raw text content of the links list'
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Start Building...
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Downloading & Running Essentials
+        # This 'env' block makes the secret available as an environment variable
+        # for all commands within this step.
+        env:
+          LINKS_CONTENT: ${{ github.event.inputs.links_content }}
+        run: |
+          wget -O runapp.sh "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/runapp.sh"
+          chmod +x runapp.sh
+          ./runapp.sh
