@@ -39,11 +39,12 @@ jobs:
 
       - name: Download files with aria2c
         run: |
-          # Convert comma or newline separated URLs into aria2c input file
+          # Convert comma or newline separated URLs, fix blob -> resolve, then download
           echo "${{ github.event.inputs.download_urls }}" \
             | tr ',' '\n' \
             | sed 's/^ *//;s/ *$//' \
             | grep -v '^$' \
+            | sed 's|/blob/|/resolve/|g' \
             > url_list.txt
 
           echo "=== URLs to download ==="
@@ -103,6 +104,8 @@ jobs:
           extracted_dir = "extracted"
           for fname in os.listdir(extracted_dir):
               local_path = os.path.join(extracted_dir, fname)
+              if not os.path.isfile(local_path):
+                  continue
               path_in_repo = os.path.join(dest_folder, fname) if dest_folder else fname
               print(f"Uploading {fname} -> {path_in_repo}")
               api.upload_file(
