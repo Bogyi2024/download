@@ -39,15 +39,26 @@ jobs:
 
       - name: Download files with aria2c
         run: |
-          # Convert comma or newline separated URLs, fix blob -> resolve, then download
+          # Convert comma or newline separated URLs, fix blob -> resolve
           echo "${{ github.event.inputs.download_urls }}" \
             | tr ',' '\n' \
             | sed 's/^ *//;s/ *$//' \
             | grep -v '^$' \
             | sed 's|/blob/|/resolve/|g' \
-            > url_list.txt
+            > raw_urls.txt
 
-          echo "=== URLs to download ==="
+          echo "=== Raw URLs ==="
+          cat raw_urls.txt
+
+          # Build aria2c input file with explicit 'out=' filename per URL
+          > url_list.txt
+          while IFS= read -r url; do
+            fname=$(basename "$url" | sed 's/?.*$//')
+            echo "$url" >> url_list.txt
+            echo "  out=$fname" >> url_list.txt
+          done < raw_urls.txt
+
+          echo "=== aria2c input file ==="
           cat url_list.txt
 
           aria2c \
