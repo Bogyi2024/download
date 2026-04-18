@@ -1,0 +1,115 @@
+name: Download Extract Upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      download_urls:
+        description: 'Download URLs (one per line or comma-separated)'
+        required: true
+        type: string
+      hf_destination_repo:
+        description: 'HuggingFace destination repo (e.g. username/reponame)'
+        required: true
+        type: string
+      output_folder:
+        description: 'Subfolder in HF repo to upload into (leave blank for root)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  download-extract-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y aria2 unrar p7zip-full
+
+      - name: Install HuggingFace CLI
+        run: pip install huggingface_hub
+
+      - name: Create work directories
+        run: |
+          mkdir -p downloads extracted
+
+      - name: Download files with aria2c
+        run: |
+          # Convert comma or newline separated URLs into aria2c input file
+          echo "${{ github.event.inputs.download_urls }}" \
+            | tr ',' '\n' \
+            | sed 's/^ *//;s/ *$//' \
+            | grep -v '^$' \
+            > url_list.txt
+
+          echo "=== URLs to download ==="
+          cat url_list.txt
+
+          aria2c \
+            --input-file=url_list.txt \
+            --dir=downloads \
+            --max-connection-per-server=16 \
+            --split=16 \
+            --min-split-size=1M \
+            --continue=true \
+            --retry-wait=5 \
+            --max-tries=5
+
+      - name: List downloaded files
+        run: ls -lh downloads/
+
+      - name: Extract RAR / ZIP / 7z archives
+        run: |
+          cd downloads
+          for file in *.part1.rar *.rar; do
+            [ -f "$file" ] || continue
+            echo "Extracting: $file"
+            unrar x -y "$file" ../extracted/
+          done
+          for file in *.zip; do
+            [ -f "$file" ] || continue
+            echo "Extracting: $file"
+            unzip -o "$file" -d ../extracted/
+          done
+          for file in *.7z; do
+            [ -f "$file" ] || continue
+            echo "Extracting: $file"
+            7z x "$file" -o../extracted/ -y
+          done
+
+      - name: List extracted files
+        run: ls -lh extracted/
+
+      - name: Upload to HuggingFace
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          DEST_FOLDER="${{ github.event.inputs.output_folder }}"
+
+          python3 - <<EOF
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo_id = "${{ github.event.inputs.hf_destination_repo }}"
+          dest_folder = "${DEST_FOLDER}".strip()
+
+          api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True)
+
+          extracted_dir = "extracted"
+          for fname in os.listdir(extracted_dir):
+              local_path = os.path.join(extracted_dir, fname)
+              path_in_repo = os.path.join(dest_folder, fname) if dest_folder else fname
+              print(f"Uploading {fname} -> {path_in_repo}")
+              api.upload_file(
+                  path_or_fileobj=local_path,
+                  path_in_repo=path_in_repo,
+                  repo_id=repo_id,
+                  repo_type="dataset",
+              )
+          print("Done!")
+          EOF
