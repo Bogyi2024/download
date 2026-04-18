@@ -11,6 +11,15 @@ on:
         description: 'HuggingFace destination repo (e.g. username/reponame)'
         required: true
         type: string
+      hf_repo_type:
+        description: 'HuggingFace repo type'
+        required: true
+        type: choice
+        default: 'model'
+        options:
+          - model
+          - dataset
+          - space
       output_folder:
         description: 'Subfolder in HF repo to upload into (leave blank for root)'
         required: false
@@ -101,6 +110,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           DEST_FOLDER="${{ github.event.inputs.output_folder }}"
+          REPO_TYPE="${{ github.event.inputs.hf_repo_type }}"
 
           python3 - <<EOF
           import os
@@ -108,22 +118,10 @@ jobs:
 
           api = HfApi(token=os.environ["HF_TOKEN"])
           repo_id = "${{ github.event.inputs.hf_destination_repo }}"
+          repo_type = "${REPO_TYPE}".strip()
           dest_folder = "${DEST_FOLDER}".strip()
 
-          api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True)
+          api.create_repo(repo_id=repo_id, repo_type=repo_type, exist_ok=True)
 
           extracted_dir = "extracted"
           for fname in os.listdir(extracted_dir):
-              local_path = os.path.join(extracted_dir, fname)
-              if not os.path.isfile(local_path):
-                  continue
-              path_in_repo = os.path.join(dest_folder, fname) if dest_folder else fname
-              print(f"Uploading {fname} -> {path_in_repo}")
-              api.upload_file(
-                  path_or_fileobj=local_path,
-                  path_in_repo=path_in_repo,
-                  repo_id=repo_id,
-                  repo_type="dataset",
-              )
-          print("Done!")
-          EOF
