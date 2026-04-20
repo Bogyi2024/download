@@ -2,7 +2,22 @@ name: PikPak Auto Download
 
 on:
   workflow_dispatch:
-  
+    inputs:
+      email:
+        description: 'PikPak email'
+        required: true
+        type: string
+      
+      password:
+        description: 'PikPak password (leave empty to use secret)'
+        required: false
+        type: string
+      
+      filename:
+        description: 'Specific file to download (leave empty for first file)'
+        required: false
+        type: string
+
   schedule:
     - cron: '0 2 * * *'
 
@@ -26,9 +41,9 @@ jobs:
       
       - name: Run download script
         env:
-          PIKPAK_EMAIL: ${{ secrets.PIKPAK_EMAIL }}
-          PIKPAK_PASSWORD: ${{ secrets.PIKPAK_PASSWORD }}
-          PIKPAK_FILE_NAME: ${{ secrets.PIKPAK_FILE_NAME }}
+          PIKPAK_EMAIL: ${{ github.event.inputs.email || secrets.PIKPAK_EMAIL }}
+          PIKPAK_PASSWORD: ${{ github.event.inputs.password || secrets.PIKPAK_PASSWORD }}
+          PIKPAK_FILE_NAME: ${{ github.event.inputs.filename || secrets.PIKPAK_FILE_NAME }}
         run: |
           cat > download.py << 'EOF'
           import os
