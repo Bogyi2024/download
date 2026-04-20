@@ -64,31 +64,163 @@ jobs:
                   page = await context.new_page()
                   
                   try:
-                      print("Logging into PikPak...")
-                      await page.goto("https://mypikpak.com", wait_until="networkidle")
+                      print("Navigating to PikPak drive...")
+                      # FIXED: Use /drive/ URL which has the login page
+                      await page.goto("https://mypikpak.com/drive/", wait_until="networkidle")
                       
-                      await page.fill('input[type="email"], input[name="email"], input[placeholder*="email" i]', EMAIL)
-                      await page.fill('input[type="password"], input[name="password"], input[placeholder*="password" i]', PASSWORD)
-                      await page.click('button[type="submit"], button:has-text("Sign in"), button:has-text("Login")')
+                      # Wait for login form to appear
+                      print("Waiting for login form...")
+                      await page.wait_for_selector('input[type="text"], input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="账号" i], input[placeholder*="邮箱" i]', timeout=15000)
                       
-                      await page.wait_for_selector(".file-list, .drive-item, [data-testid='file-list']", timeout=30000)
+                      # Try multiple selectors for email input
+                      email_selectors = [
+                          'input[type="email"]',
+                          'input[type="text"]',
+                          'input[name="email"]',
+                          'input[name="username"]',
+                          'input[placeholder*="email" i]',
+                          'input[placeholder*="账号" i]',
+                          'input[placeholder*="邮箱" i]',
+                          'input[placeholder*="mail" i]',
+                      ]
+                      
+                      email_filled = False
+                      for selector in email_selectors:
+                          try:
+                              if await page.is_visible(selector, timeout=2000):
+                                  await page.fill(selector, EMAIL)
+                                  print(f"Filled email using: {selector}")
+                                  email_filled = True
+                                  break
+                          except:
+                              continue
+                      
+                      if not email_filled:
+                          # Last resort: fill first text input
+                          await page.locator('input').first.fill(EMAIL)
+                          print("Filled first input as email")
+                      
+                      # Try multiple selectors for password input
+                      password_selectors = [
+                          'input[type="password"]',
+                          'input[name="password"]',
+                          'input[placeholder*="password" i]',
+                          'input[placeholder*="密码" i]',
+                      ]
+                      
+                      password_filled = False
+                      for selector in password_selectors:
+                          try:
+                              if await page.is_visible(selector, timeout=2000):
+                                  await page.fill(selector, PASSWORD)
+                                  print(f"Filled password using: {selector}")
+                                  password_filled = True
+                                  break
+                          except:
+                              continue
+                      
+                      if not password_filled:
+                          raise Exception("Could not find password input")
+                      
+                      # Click login button
+                      login_btn_selectors = [
+                          'button[type="submit"]',
+                          'button:has-text("Sign in")',
+                          'button:has-text("Login")',
+                          'button:has-text("Log in")',
+                          'button:has-text("登录")',
+                          'button:has-text("Sign In")',
+                          '.login-btn',
+                          '[data-testid="login-button"]',
+                      ]
+                      
+                      btn_clicked = False
+                      for selector in login_btn_selectors:
+                          try:
+                              if await page.is_visible(selector, timeout=2000):
+                                  await page.click(selector)
+                                  print(f"Clicked login button: {selector}")
+                                  btn_clicked = True
+                                  break
+                          except:
+                              continue
+                      
+                      if not btn_clicked:
+                          # Try pressing Enter
+                          await page.keyboard.press("Enter")
+                          print("Pressed Enter to submit")
+                      
+                      # Wait for drive to load
+                      print("Waiting for drive to load...")
+                      await page.wait_for_selector(".file-list, .drive-item, [data-testid='file-list'], .file-item, .grid-item", timeout=30000)
                       print("Logged in successfully!")
                       
+                      # Search for specific file if provided
                       if TARGET_FILE:
                           print(f"Searching for: {TARGET_FILE}")
-                          search_input = await page.query_selector('input[placeholder*="search" i], input[type="search"]')
-                          if search_input:
-                              await search_input.fill(TARGET_FILE)
-                              await page.keyboard.press("Enter")
-                              await asyncio.sleep(2)
+                          search_selectors = [
+                              'input[placeholder*="search" i]',
+                              'input[type="search"]',
+                              'input[placeholder*="搜索" i]',
+                          ]
+                          for selector in search_selectors:
+                              try:
+                                  if await page.is_visible(selector, timeout=2000):
+                                      await page.fill(selector, TARGET_FILE)
+                                      await page.keyboard.press("Enter")
+                                      await asyncio.sleep(2)
+                                      break
+                              except:
+                                  continue
                       
+                      # Download file
                       print("Starting download...")
                       async with page.expect_download(timeout=120000) as download_info:
                           if TARGET_FILE:
-                              await page.click(f'.file-item:has-text("{TARGET_FILE}"), .drive-item:has-text("{TARGET_FILE}")')
+                              file_selectors = [
+                                  f'.file-item:has-text("{TARGET_FILE}")',
+                                  f'.drive-item:has-text("{TARGET_FILE}")',
+                                  f'.grid-item:has-text("{TARGET_FILE}")',
+                                  f'[title="{TARGET_FILE}"]',
+                              ]
+                              for selector in file_selectors:
+                                  try:
+                                      if await page.is_visible(selector, timeout=2000):
+                                          await page.click(selector)
+                                          break
+                                  except:
+                                      continue
                           else:
-                              await page.click(".file-item:first-child, .drive-item:first-child")
-                          await page.click('button:has-text("Download"), [aria-label="download"], .download-btn')
+                              # Click first file
+                              first_file_selectors = [
+                                  ".file-item:first-child",
+                                  ".drive-item:first-child", 
+                                  ".grid-item:first-child",
+                                  ".file-list > div:first-child",
+                              ]
+                              for selector in first_file_selectors:
+                                  try:
+                                      if await page.is_visible(selector, timeout=2000):
+                                          await page.click(selector)
+                                          break
+                                  except:
+                                      continue
+                          
+                          # Click download button
+                          dl_selectors = [
+                              'button:has-text("Download")',
+                              'button:has-text("下载")',
+                              '[aria-label="download"]',
+                              '.download-btn',
+                              '[data-testid="download"]',
+                          ]
+                          for selector in dl_selectors:
+                              try:
+                                  if await page.is_visible(selector, timeout=2000):
+                                      await page.click(selector)
+                                      break
+                              except:
+                                  continue
                       
                       download = await download_info.value
                       save_path = DOWNLOAD_DIR / download.suggested_filename
@@ -101,6 +233,10 @@ jobs:
                   except Exception as e:
                       print(f"Error: {e}")
                       await page.screenshot(path="error_screenshot.png")
+                      # Also save page HTML for debugging
+                      html = await page.content()
+                      with open("page_debug.html", "w", encoding="utf-8") as f:
+                          f.write(html)
                       raise
                   finally:
                       await browser.close()
@@ -112,9 +248,13 @@ jobs:
           EOF
           python download.py
       
-      - name: Upload downloaded files
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: downloaded-files
-          path: ./downloads/
+          name: download-artifacts
+          path: |
+            ./downloads/
+            error_screenshot.png
+            page_debug.html
           retention-days: 7
