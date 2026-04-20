@@ -1,0 +1,105 @@
+name: PikPak Auto Download
+
+on:
+  workflow_dispatch:
+  
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install playwright
+          playwright install chromium
+      
+      - name: Run download script
+        env:
+          PIKPAK_EMAIL: ${{ secrets.PIKPAK_EMAIL }}
+          PIKPAK_PASSWORD: ${{ secrets.PIKPAK_PASSWORD }}
+          PIKPAK_FILE_NAME: ${{ secrets.PIKPAK_FILE_NAME }}
+        run: |
+          cat > download.py << 'EOF'
+          import os
+          import asyncio
+          from playwright.async_api import async_playwright
+          from pathlib import Path
+
+          EMAIL = os.environ.get("PIKPAK_EMAIL")
+          PASSWORD = os.environ.get("PIKPAK_PASSWORD")
+          TARGET_FILE = os.environ.get("PIKPAK_FILE_NAME", "")
+          DOWNLOAD_DIR = Path("./downloads")
+          DOWNLOAD_DIR.mkdir(exist_ok=True)
+
+          async def download_from_pikpak():
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch(headless=True)
+                  context = await browser.new_context(accept_downloads=True, viewport={"width": 1920, "height": 1080})
+                  page = await context.new_page()
+                  
+                  try:
+                      print("Logging into PikPak...")
+                      await page.goto("https://mypikpak.com", wait_until="networkidle")
+                      
+                      await page.fill('input[type="email"], input[name="email"], input[placeholder*="email" i]', EMAIL)
+                      await page.fill('input[type="password"], input[name="password"], input[placeholder*="password" i]', PASSWORD)
+                      await page.click('button[type="submit"], button:has-text("Sign in"), button:has-text("Login")')
+                      
+                      await page.wait_for_selector(".file-list, .drive-item, [data-testid='file-list']", timeout=30000)
+                      print("Logged in successfully!")
+                      
+                      if TARGET_FILE:
+                          print(f"Searching for: {TARGET_FILE}")
+                          search_input = await page.query_selector('input[placeholder*="search" i], input[type="search"]')
+                          if search_input:
+                              await search_input.fill(TARGET_FILE)
+                              await page.keyboard.press("Enter")
+                              await asyncio.sleep(2)
+                      
+                      print("Starting download...")
+                      async with page.expect_download(timeout=120000) as download_info:
+                          if TARGET_FILE:
+                              await page.click(f'.file-item:has-text("{TARGET_FILE}"), .drive-item:has-text("{TARGET_FILE}")')
+                          else:
+                              await page.click(".file-item:first-child, .drive-item:first-child")
+                          await page.click('button:has-text("Download"), [aria-label="download"], .download-btn')
+                      
+                      download = await download_info.value
+                      save_path = DOWNLOAD_DIR / download.suggested_filename
+                      await download.save_as(save_path)
+                      print(f"Downloaded: {save_path}")
+                      
+                      files = list(DOWNLOAD_DIR.glob("*"))
+                      print(f"Files in downloads: {[f.name for f in files]}")
+                      
+                  except Exception as e:
+                      print(f"Error: {e}")
+                      await page.screenshot(path="error_screenshot.png")
+                      raise
+                  finally:
+                      await browser.close()
+
+          if __name__ == "__main__":
+              if not EMAIL or not PASSWORD:
+                  raise ValueError("PIKPAK_EMAIL and PIKPAK_PASSWORD required!")
+              asyncio.run(download_from_pikpak())
+          EOF
+          python download.py
+      
+      - name: Upload downloaded files
+        uses: actions/upload-artifact@v4
+        with:
+          name: downloaded-files
+          path: ./downloads/
+          retention-days: 7
