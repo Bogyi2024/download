@@ -36,8 +36,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install playwright
-          playwright install chromium
+          pip install PikPakApi aiohttp
       
       - name: Run download script
         env:
@@ -48,213 +47,100 @@ jobs:
           cat > download.py << 'EOF'
           import os
           import asyncio
-          from playwright.async_api import async_playwright
           from pathlib import Path
+          from pikpakapi import PikPakApi
+          import aiohttp
 
           EMAIL = os.environ.get("PIKPAK_EMAIL")
           PASSWORD = os.environ.get("PIKPAK_PASSWORD")
-          TARGET_FILE = os.environ.get("PIKPAK_FILE_NAME", "")
+          TARGET_FILE = os.environ.get("PIKPAK_FILE_NAME", "").strip()
           DOWNLOAD_DIR = Path("./downloads")
           DOWNLOAD_DIR.mkdir(exist_ok=True)
 
           async def download_from_pikpak():
-              async with async_playwright() as p:
-                  browser = await p.chromium.launch(headless=True)
-                  context = await browser.new_context(accept_downloads=True, viewport={"width": 1920, "height": 1080})
-                  page = await context.new_page()
-                  
-                  try:
-                      print("Navigating to PikPak drive...")
-                      # FIXED: Use /drive/ URL which has the login page
-                      await page.goto("https://mypikpak.com/drive/", wait_until="networkidle")
-                      
-                      # Wait for login form to appear
-                      print("Waiting for login form...")
-                      await page.wait_for_selector('input[type="text"], input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="账号" i], input[placeholder*="邮箱" i]', timeout=15000)
-                      
-                      # Try multiple selectors for email input
-                      email_selectors = [
-                          'input[type="email"]',
-                          'input[type="text"]',
-                          'input[name="email"]',
-                          'input[name="username"]',
-                          'input[placeholder*="email" i]',
-                          'input[placeholder*="账号" i]',
-                          'input[placeholder*="邮箱" i]',
-                          'input[placeholder*="mail" i]',
-                      ]
-                      
-                      email_filled = False
-                      for selector in email_selectors:
-                          try:
-                              if await page.is_visible(selector, timeout=2000):
-                                  await page.fill(selector, EMAIL)
-                                  print(f"Filled email using: {selector}")
-                                  email_filled = True
-                                  break
-                          except:
-                              continue
-                      
-                      if not email_filled:
-                          # Last resort: fill first text input
-                          await page.locator('input').first.fill(EMAIL)
-                          print("Filled first input as email")
-                      
-                      # Try multiple selectors for password input
-                      password_selectors = [
-                          'input[type="password"]',
-                          'input[name="password"]',
-                          'input[placeholder*="password" i]',
-                          'input[placeholder*="密码" i]',
-                      ]
-                      
-                      password_filled = False
-                      for selector in password_selectors:
-                          try:
-                              if await page.is_visible(selector, timeout=2000):
-                                  await page.fill(selector, PASSWORD)
-                                  print(f"Filled password using: {selector}")
-                                  password_filled = True
-                                  break
-                          except:
-                              continue
-                      
-                      if not password_filled:
-                          raise Exception("Could not find password input")
-                      
-                      # Click login button
-                      login_btn_selectors = [
-                          'button[type="submit"]',
-                          'button:has-text("Sign in")',
-                          'button:has-text("Login")',
-                          'button:has-text("Log in")',
-                          'button:has-text("登录")',
-                          'button:has-text("Sign In")',
-                          '.login-btn',
-                          '[data-testid="login-button"]',
-                      ]
-                      
-                      btn_clicked = False
-                      for selector in login_btn_selectors:
-                          try:
-                              if await page.is_visible(selector, timeout=2000):
-                                  await page.click(selector)
-                                  print(f"Clicked login button: {selector}")
-                                  btn_clicked = True
-                                  break
-                          except:
-                              continue
-                      
-                      if not btn_clicked:
-                          # Try pressing Enter
-                          await page.keyboard.press("Enter")
-                          print("Pressed Enter to submit")
-                      
-                      # Wait for drive to load
-                      print("Waiting for drive to load...")
-                      await page.wait_for_selector(".file-list, .drive-item, [data-testid='file-list'], .file-item, .grid-item", timeout=30000)
-                      print("Logged in successfully!")
-                      
-                      # Search for specific file if provided
-                      if TARGET_FILE:
-                          print(f"Searching for: {TARGET_FILE}")
-                          search_selectors = [
-                              'input[placeholder*="search" i]',
-                              'input[type="search"]',
-                              'input[placeholder*="搜索" i]',
-                          ]
-                          for selector in search_selectors:
-                              try:
-                                  if await page.is_visible(selector, timeout=2000):
-                                      await page.fill(selector, TARGET_FILE)
-                                      await page.keyboard.press("Enter")
-                                      await asyncio.sleep(2)
-                                      break
-                              except:
-                                  continue
-                      
-                      # Download file
-                      print("Starting download...")
-                      async with page.expect_download(timeout=120000) as download_info:
-                          if TARGET_FILE:
-                              file_selectors = [
-                                  f'.file-item:has-text("{TARGET_FILE}")',
-                                  f'.drive-item:has-text("{TARGET_FILE}")',
-                                  f'.grid-item:has-text("{TARGET_FILE}")',
-                                  f'[title="{TARGET_FILE}"]',
-                              ]
-                              for selector in file_selectors:
-                                  try:
-                                      if await page.is_visible(selector, timeout=2000):
-                                          await page.click(selector)
-                                          break
-                                  except:
-                                      continue
-                          else:
-                              # Click first file
-                              first_file_selectors = [
-                                  ".file-item:first-child",
-                                  ".drive-item:first-child", 
-                                  ".grid-item:first-child",
-                                  ".file-list > div:first-child",
-                              ]
-                              for selector in first_file_selectors:
-                                  try:
-                                      if await page.is_visible(selector, timeout=2000):
-                                          await page.click(selector)
-                                          break
-                                  except:
-                                      continue
-                          
-                          # Click download button
-                          dl_selectors = [
-                              'button:has-text("Download")',
-                              'button:has-text("下载")',
-                              '[aria-label="download"]',
-                              '.download-btn',
-                              '[data-testid="download"]',
-                          ]
-                          for selector in dl_selectors:
-                              try:
-                                  if await page.is_visible(selector, timeout=2000):
-                                      await page.click(selector)
-                                      break
-                              except:
-                                  continue
-                      
-                      download = await download_info.value
-                      save_path = DOWNLOAD_DIR / download.suggested_filename
-                      await download.save_as(save_path)
-                      print(f"Downloaded: {save_path}")
-                      
-                      files = list(DOWNLOAD_DIR.glob("*"))
-                      print(f"Files in downloads: {[f.name for f in files]}")
-                      
-                  except Exception as e:
-                      print(f"Error: {e}")
-                      await page.screenshot(path="error_screenshot.png")
-                      # Also save page HTML for debugging
-                      html = await page.content()
-                      with open("page_debug.html", "w", encoding="utf-8") as f:
-                          f.write(html)
-                      raise
-                  finally:
-                      await browser.close()
-
-          if __name__ == "__main__":
               if not EMAIL or not PASSWORD:
                   raise ValueError("PIKPAK_EMAIL and PIKPAK_PASSWORD required!")
+
+              print(f"Logging in as {EMAIL}...")
+              client = PikPakApi(username=EMAIL, password=PASSWORD)
+              await client.login()
+              print("Login successful!")
+
+              print("Fetching file list...")
+              file_list = await client.file_list(parent_id="")
+              files = file_list.get("files", [])
+              
+              if not files:
+                  print("No files found in your PikPak drive.")
+                  return
+
+              print(f"Found {len(files)} files:")
+              for f in files:
+                  print(f"  - {f.get('name')}")
+
+              # Select target file
+              target = None
+              if TARGET_FILE:
+                  for f in files:
+                      if f.get("name") == TARGET_FILE:
+                          target = f
+                          break
+                  if not target:
+                      raise ValueError(f"File '{TARGET_FILE}' not found!")
+              else:
+                  target = files[0]
+
+              file_id = target.get("id")
+              file_name = target.get("name")
+              print(f"Selected: {file_name}")
+
+              # Get download URL
+              print("Getting download URL...")
+              file_detail = await client.offline_download(file_id)
+              
+              # Try to extract download URL
+              download_url = None
+              if isinstance(file_detail, dict):
+                  medias = file_detail.get("medias", [])
+                  if medias and len(medias) > 0:
+                      download_url = medias[0].get("link", {}).get("url")
+                  if not download_url:
+                      download_url = file_detail.get("web_content_link")
+              
+              if not download_url:
+                  # Fallback: try path API
+                  print("Trying path API...")
+                  path_info = await client.file_get_path(file_id)
+                  if isinstance(path_info, list) and len(path_info) > 0:
+                      download_url = path_info[0].get("url")
+                  elif isinstance(path_info, dict):
+                      download_url = path_info.get("url")
+
+              if not download_url:
+                  raise Exception("Could not get download URL!")
+
+              print(f"Downloading from URL...")
+              async with aiohttp.ClientSession() as session:
+                  async with session.get(download_url) as response:
+                      if response.status == 200:
+                          save_path = DOWNLOAD_DIR / file_name
+                          with open(save_path, "wb") as f:
+                              async for chunk in response.content.iter_chunked(8192):
+                                  f.write(chunk)
+                          size = save_path.stat().st_size
+                          print(f"Downloaded: {save_path} ({size} bytes)")
+                      else:
+                          raise Exception(f"Download failed: HTTP {response.status}")
+
+          if __name__ == "__main__":
               asyncio.run(download_from_pikpak())
           EOF
           python download.py
       
-      - name: Upload artifacts
+      - name: Upload downloaded files
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: download-artifacts
-          path: |
-            ./downloads/
-            error_screenshot.png
-            page_debug.html
+          name: downloaded-files
+          path: ./downloads/
           retention-days: 7
